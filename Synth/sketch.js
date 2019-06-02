@@ -1,4 +1,3 @@
-
 let reverb;
 let polySynth;
 let backColor = 255;
@@ -23,9 +22,20 @@ let fundSynth;
 let delay;
 let loudness;
 
+let video;
+let prevFrame;
+let threshold = 20;
+let changeCoefficient = 0;
+let arrayLength = 90
+let prevChanges = new Array(arrayLength);
+
 function setup() {
-  let cnv = createCanvas(300, 300);
-  textAlign(CENTER);
+  let cnv = createCanvas(640, 360);
+  audioSetup();
+  videoSetup();
+}
+
+function audioSetup() {
   amplitude = new p5.Amplitude();
   reverb = new p5.Reverb();
 
@@ -37,7 +47,7 @@ function setup() {
 
   harmonySynth = new p5.Oscillator();
   harmonySynth.setType("sine");
-  harmonySynth.freq(currentPitch*1.5);
+  harmonySynth.freq(currentPitch * 1.5);
   harmonySynth.amp(.2);
   harmonySynth.start();
 
@@ -49,24 +59,37 @@ function setup() {
 
   // connect soundFile to reverb, process w/
   // 3 second reverbTime, decayRate of 2%
-  reverb.process(fundSynth, 3, 1);
+  // reverb.process(fundSynth, 3, 1);
   reverb.process(melodySynth, 3, 1);
 
   delay = new p5.Delay();
   // source, delayTime, feedback, filter frequency
-  // delay.process(melodySynth, map(mouseY,0,height, 0.,1.), .7, targetPitch);
+  delay.process(melodySynth, .1, .8, 2000);
+}
+
+function videoSetup() {
+  //pixelDensity(1);
+  video = createCapture(VIDEO);
+  video.size(640, 360);
+  video.hide();
+  prevFrame = createImage(video.width, video.height);
+  ellipseMode(CENTER);
+  fill(255, 0, 255);
+  prevChanges.fill(0, 0);
 }
 
 function draw() {
-  background(backColor);
+  background(255);
   let vol = getMasterVolume();
   let level = amplitude.getLevel();
   let size = map(level, 0, 1, 0, 500);
   fill(255, 0, 255);
-  ellipse(width / 2, height / 2, size, size);
-  loudness = map(mouseX, 0, width, 0., .5);
-  delay.process(melodySynth, .1, .9, 50);
+  //ellipse(width / 2, height / 2, size, size);
+  // loudness = map(mouseX, 0, width, 0., .5);
+  // delay.process(melodySynth, .1, .9, 50);
 
+  videoProcessing();
+  averageChanges()
   composer();
   timer();
   tuner();
@@ -77,7 +100,7 @@ function timer() {
   if (tempTime != second()) {
     // console.log("time: "+currentTime);
     if (currentTime == targetTime) {
-      interval = floor(random(7))+3;
+      interval = floor(random(7)) + 3;
       targetTime = currentTime + interval;
       // console.log("interval " +interval);
       // console.log("target "+ targetTime)
@@ -90,15 +113,12 @@ function timer() {
   }
 }
 
-
-
 function composer() {
   if (tempTime != second()) {
     if (compose && currentTime % interval == 0) {
       if (even) {
         currentPitch = int(currentPitch);
         currentPitch = targetPitch;
-        // console.log("time " + currentTime + " curr " + currentPitch);
         let factor = (random(5) + 4) / 6; //  2/3 below to 3/2 above (5th)
         targetPitch = int(factor * currentPitch);
         if (targetPitch > maxPitch) {
@@ -107,12 +127,8 @@ function composer() {
         if (targetPitch < minPitch) {
           targetPitch = minPitch;
         }
-        // console.log("targetPitch " + targetPitch);
         let pitchChange = targetPitch - currentPitch;
-
-        // console.log("pitchChange " + pitchChange);
-        tuneInc = pitchChange / (interval * frameRate()); // 50 ~frameRate()
-        // console.log("tuneInc " + tuneInc);
+        tuneInc = pitchChange / (interval * frameRate());
         compose = false;
       }
       even++;
@@ -125,13 +141,11 @@ function composer() {
 function tuner() {
   if (currentPitch == targetPitch || abs(currentPitch - targetPitch) < abs(tuneInc)) {
     tuning = false;
-    // console.log("match " + currentPitch + ", " + targetPitch);
   } else {
     tuning = true;
   }
   if (tuning) {
     currentPitch += tuneInc;
-    // console.log("tuning");
   }
 }
 
@@ -139,17 +153,64 @@ function synths() {
   melodySynth.freq(currentPitch);
   melodySynth.amp(loudness);
 
-  let harmSynthVol = loudness*((sin(frameCount/200)));
-  if (harmSynthVol< 0) {
+  let harmSynthVol = loudness * ((sin(frameCount / 200)));
+  if (harmSynthVol < 0) {
     harmSynthVol = 0;
   }
-  harmonySynth.freq(currentPitch*1.5);
+  harmonySynth.freq(currentPitch * 1.5);
   harmonySynth.amp(harmSynthVol);
 
 
-
-  let fundVolume = ((sin(frameCount/200)/10));
+  let fundVolume = ((sin(frameCount / 200) / 10));
   fundSynth.amp(fundVolume);
-  let fundPitch = ((sin(frameCount/600)* 20)+minPitch);
+  let fundPitch = ((sin(frameCount / 600) * 20) + minPitch);
   fundSynth.freq(fundPitch);
+}
+
+function distSq(x1, y1, z1, x2, y2, z2) {
+  let dist = (x1 - x2) * (x1 - x2) + (y1 - y2) * (y1 - y2) + (z1 - z2) * (z1 - z2);
+  return dist;
+}
+
+function videoProcessing() {
+  changeCoefficient = 0;
+  loadPixels();
+  video.loadPixels();
+  prevFrame.loadPixels();
+  for (var x = 0; x < video.width; x++) {
+    for (var y = 0; y < video.height; y++) {
+      var loc = (x + y * video.width) * 4;
+
+      var r1 = prevFrame.pixels[loc];
+      var g1 = prevFrame.pixels[loc + 1];
+      var b1 = prevFrame.pixels[loc + 2];
+
+      var r2 = video.pixels[loc];
+      var g2 = video.pixels[loc + 1];
+      var b2 = video.pixels[loc + 2];
+
+      var diff = distSq(r1, g1, b1, r2, g2, b2);
+      if (diff > threshold * threshold) {
+        changeCoefficient++;
+      }
+    }
+  }
+  updatePixels();
+  // Save frame for the next cycle
+  if (video.canvas) {
+    prevFrame.copy(video, 0, 0, video.width, video.height, 0, 0, video.width, video.height); // Before we read the new frame, we always save the previous frame for comparison!
+  }
+
+}
+
+function averageChanges() {
+  prevChanges.push(changeCoefficient);
+  if (prevChanges.length > arrayLength) {
+    prevChanges.shift();
+  }
+  let sum = prevChanges.reduce((previous, current) => current += previous);
+  let avg = sum / prevChanges.length;
+  let size = map(avg, 0, 6000, 0, 100);
+  loudness = map(avg, 0, 6000, 0., .5);
+  ellipse(width / 2, height / 2, size, size);
 }
