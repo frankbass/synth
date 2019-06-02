@@ -21,6 +21,7 @@ let harmonySynth;
 let fundSynth;
 let delay;
 let loudness;
+let loudnessMax = .7;
 
 let video;
 let prevFrame;
@@ -57,14 +58,14 @@ function audioSetup() {
   fundSynth.amp(.1);
   fundSynth.start();
 
-  // connect soundFile to reverb, process w/
+
   // 3 second reverbTime, decayRate of 2%
   // reverb.process(fundSynth, 3, 1);
   reverb.process(melodySynth, 3, 1);
 
   delay = new p5.Delay();
   // source, delayTime, feedback, filter frequency
-  delay.process(melodySynth, .1, .8, 2000);
+  delay.process(melodySynth, .9, .8, 2000);
 }
 
 function videoSetup() {
@@ -83,7 +84,7 @@ function draw() {
   let vol = getMasterVolume();
   let level = amplitude.getLevel();
   let size = map(level, 0, 1, 0, 500);
-  fill(255, 0, 255);
+  fill(0, 255, 255);
   //ellipse(width / 2, height / 2, size, size);
   // loudness = map(mouseX, 0, width, 0., .5);
   // delay.process(melodySynth, .1, .9, 50);
@@ -102,8 +103,6 @@ function timer() {
     if (currentTime == targetTime) {
       interval = floor(random(7)) + 3;
       targetTime = currentTime + interval;
-      // console.log("interval " +interval);
-      // console.log("target "+ targetTime)
     }
     currentTime++;
     tempTime = second();
@@ -160,7 +159,6 @@ function synths() {
   harmonySynth.freq(currentPitch * 1.5);
   harmonySynth.amp(harmSynthVol);
 
-
   let fundVolume = ((sin(frameCount / 200) / 10));
   fundSynth.amp(fundVolume);
   let fundPitch = ((sin(frameCount / 600) * 20) + minPitch);
@@ -211,6 +209,9 @@ function averageChanges() {
   let sum = prevChanges.reduce((previous, current) => current += previous);
   let avg = sum / prevChanges.length;
   let size = map(avg, 0, 6000, 0, 100);
-  loudness = map(avg, 0, 6000, 0., .5);
+  loudness = map(avg, 0, 6000, 0., loudnessMax);
+  if (loudness > loudnessMax) {
+    loudness = loudnessMax;
+  }
   ellipse(width / 2, height / 2, size, size);
 }
