@@ -10,6 +10,7 @@ let minPitch = 100;
 let interval = 2;
 let targetTime = currentTime + interval;
 let tuning = false;
+let running = true;
 
 let targetPitch = currentPitch;
 let tuneInc = 0;
@@ -33,7 +34,7 @@ let prevChanges = new Array(arrayLength);
 let pinkNoise, filtering;
 
 let chapter = 0;
-let maxChapter = 3;
+// let maxChapter = 3;
 
 let chapName = "A";
 
@@ -45,7 +46,7 @@ let waveCounter = 0;
 
 function setup() {
   let cnv = createCanvas(640, 360);
-
+  tempFrCo = frameCount;
   synthSetup();
   noiseSetup()
   revDelay();
@@ -86,7 +87,7 @@ function revDelay() {
   delay = new p5.Delay();
   // source, delayTime, feedback, filter frequency
   delay.process(melodySynth, .8, .8, 2000);
-  delay.process(filtering, .6, .5, 2000);
+  delay.process(filtering, .6, .2, 2000);
 }
 
 function videoSetup() {
@@ -102,12 +103,12 @@ function videoSetup() {
 
 function draw() {
   background(0);
-  fill(255, 255, 0);
-  text(chapName, 50, 50);
+
   let vol = getMasterVolume();
   let level = amplitude.getLevel();
   let size = map(level, 0, 1, 0, 500);
 
+  screenText();
   videoProcessing();
   averageChanges()
   composer();
@@ -115,26 +116,39 @@ function draw() {
   tuner();
   synths();
   waves();
-
-
-
   if ((tempFrCo == frameCount) || (tempFrCo + 120) > (frameCount)) {
     fadeInOut();
   }
 }
 
+function screenText() {
+  let secs = currentTime % 60;
+  secs = nf(secs, 2, 0);
+  let mins = currentTime / 60;
+  mins = floor(mins);
+  mins = nf(mins, 2, 0);
+  // let hrs = currentTime / 360;
+  // hrs = floor(hrs);
+  // hrs = nf(hrs, 2, 0);
+  fill(255, 255, 0);
+  text(chapName, 50, 50);
+  // text(hrs +":"+mins + ":"+ secs, 50, 80);
+  text(mins + ":" + secs, 50, 80);
+}
+
 function timer() {
-  if (tempTime != second()) {
-    // console.log("time: "+currentTime);
-    if (currentTime == targetTime) {
-      interval = floor(random(7)) + 3;
-      targetTime = currentTime + interval;
+  if (running) {
+    if (tempTime != second()) {
+      if (currentTime == targetTime) {
+        interval = floor(random(7)) + 3;
+        targetTime = currentTime + interval;
+      }
+      currentTime++;
+      tempTime = second();
     }
-    currentTime++;
-    tempTime = second();
-  }
-  if (currentTime % interval != 0) {
-    compose = true;
+    if (currentTime % interval != 0) {
+      compose = true;
+    }
   }
 }
 
@@ -194,9 +208,6 @@ function synths() {
   fundSynth.amp(fundVolume);
   let fundPitch = ((sin(frameCount / 600) * 20) + minPitch);
   fundSynth.freq(fundPitch);
-
-
-
 
   let x = map(currentPitch, minPitch, maxPitch, 0, width);
   let y = map(fundPitch, minPitch - 20, minPitch + 20, 0, height);
@@ -259,7 +270,6 @@ function averageChanges() {
   if (controlSignal > controlSignalMax) {
     controlSignal = controlSignalMax;
   }
-
   circle(avg);
 }
 
@@ -295,13 +305,12 @@ function waves() {
   let resonance = map(y, 0, height, 0.1, 5);
   filtering.res(resonance);
 
-  // let z = (sin(frameCount / 200) + 1) / 4;
-  // let z = (sin(waveCounter / 2000000) + 1) / 4;
-
   let z = controlSignal;
   let dia = (z + .1) * 30;
-  z = z * waveVol;
-  pinkNoise.amp(z + .001, .3);
+  let squareAmp = squareWave2();
+  z = z * waveVol * squareAmp;
+
+  pinkNoise.amp(z + 0, 0);
 
   let panning;
   if (chapter == 2) {
@@ -315,33 +324,237 @@ function waves() {
 }
 
 function squareWave() {
-  let slope = 0; // inflection point from sine to square
-  let speed = sin(currentTime)+1;
-  speed = speed*5;
-  let zeroOne = sin(frameCount / speed);
+  let slope = 0;
+  // let speed = sin(currentTime) + 1;
+  // speed = speed * 20;
+  // let zeroOne = sin(frameCount / speed);
+  let zeroOne = sin(frameCount / 10);
+
   if (zeroOne > slope) {
     zeroOne = 1;
   } else {
     zeroOne = -1;
+
   }
   return zeroOne;
 }
 
-function keyPressed() {
-  if (keyCode == UP_ARROW) {
-    chapter--;
-    if (chapter < 0) {
-      chapter = 0;
-    }
-    tempFrCo = frameCount;
+function squareWave2() {
+  let slope = 0;
+  // let speed = sin(currentTime) + 1;
+  // speed = speed * 5;
+  // let zeroOne = sin(frameCount / speed);
+  let zeroOne = sin(frameCount / 5);
+
+  if (zeroOne > slope) {
+    zeroOne = 1;
+
+  } else {
+    zeroOne = 0;
 
   }
-  if (keyCode == DOWN_ARROW) {
-    chapter++;
-    if (chapter > maxChapter) {
-      chapter = maxChapter;
+  return zeroOne;
+}
+
+function fadeInOut() {
+  if (!running) {
+    synthVol = synthVol - .01;
+    waveVol = waveVol - .01;
+    if (synthVol < 0) {
+      synthVol = 0;
     }
-    tempFrCo = frameCount;
+    if (waveVol < 0) {
+      waveVol = 0;
+    }
+  } else {
+    switch (chapter) {
+      case 0:
+        synthVol = synthVol + .01;
+        waveVol = waveVol - .01;
+        if (synthVol > 1) {
+          synthVol = 1;
+        }
+        if (waveVol < 0) {
+          waveVol = 0;
+        }
+        break;
+      case 1:
+        synthVol = synthVol - .01;
+        waveVol = waveVol + .01;
+        if (synthVol < 0) {
+          synthVol = 0;
+        }
+        if (waveVol > 1) {
+          waveVol = 1;
+        }
+        break;
+      case 2:
+        synthVol = synthVol - .01;
+        waveVol = waveVol + .01;
+        if (synthVol < 0) {
+          synthVol = 0;
+        }
+        if (waveVol > 1) {
+          waveVol = 1;
+        }
+
+        break;
+      case 3:
+
+        break;
+    }
+  }
+}
+
+let timeStamp0 = 0;
+let timeStamp1 = 225;
+let timeStamp2 = 450;
+let timeStamp3 = 675;
+let timeStamp4 = 900;
+let timeStamp5 = 1200;
+let timeStamp6 = 1500;
+let timeStamp7 = 1800;
+let timeStamp8 = 2100;
+let timeStamp9 = 2400;
+let timeStamp10 = 2700;
+let timeStamp11 = 2925;
+let timeStamp12 = 3150;
+let timeStamp13 = 3375;
+let timeStamp14 = 3600;
+
+function keyPressed() {
+  if (keyCode == 32) { //32 == space
+    if (!running) {
+      running = true;
+    } else {
+      running = false;
+    }
+  }
+  tempFrCo = frameCount;
+  // if (keyCode == UP_ARROW) {
+  //   chapter--;
+  //   if (chapter < 0) {
+  //     chapter = 0;
+  //   }
+  //   tempFrCo = frameCount;
+  //
+  // }
+  // if (keyCode == DOWN_ARROW) {
+  //   chapter++;
+  //   if (chapter > maxChapter) {
+  //     chapter = maxChapter;
+  //   }
+  //   tempFrCo = frameCount;
+  // }
+  // switch (chapter) {
+  //   case 0:
+  //     chapName = "A";
+  //     break;
+  //   case 1:
+  //     chapName = "B";
+  //     break;
+  //   case 2:
+  //     chapName = "C";
+  //     break;
+  //   case 3:
+  //     chapName = "D";
+  //     break;
+  // }
+
+
+
+  if (keyIsDown(16)) { //shift
+
+    if (keyCode == 49) { //1
+      currentTime = timeStamp1;
+    }
+    if (keyCode == 50) { //2
+      currentTime = timeStamp3;
+    }
+    if (keyCode == 51) {
+      currentTime = timeStamp5;
+    }
+    if (keyCode == 52) {
+      currentTime = timeStamp7;
+    }
+    if (keyCode == 53) {
+      currentTime = timeStamp9;
+    }
+    if (keyCode == 54) {
+      currentTime = timeStamp11;
+    }
+    if (keyCode == 55) {
+      currentTime = timeStamp13;
+    }
+  } else {
+    if (keyCode == 49) { //1
+      currentTime = timeStamp0;
+    }
+    if (keyCode == 50) { //2
+      currentTime = timeStamp2;
+    }
+    if (keyCode == 51) {
+      currentTime = timeStamp4;
+    }
+    if (keyCode == 52) {
+      currentTime = timeStamp6;
+    }
+    if (keyCode == 53) {
+      currentTime = timeStamp8;
+    }
+    if (keyCode == 54) {
+      currentTime = timeStamp10;
+    }
+    if (keyCode == 55) {
+      currentTime = timeStamp12;
+    }
+  }
+
+  chapters();
+}
+
+function chapters() {
+  if (currentTime >= timeStamp0 && currentTime < timeStamp1) {
+    chapter = 0;
+  }
+  if (currentTime >= timeStamp1 && currentTime < timeStamp2) {
+    chapter = 1;
+  }
+  if (currentTime >= timeStamp2 && currentTime < timeStamp3) {
+    chapter = 2;
+  }
+  if (currentTime >= timeStamp3 && currentTime < timeStamp4) {
+    chapter = 3;
+  }
+  if (currentTime >= timeStamp4 && currentTime < timeStamp5) {
+    chapter = 4;
+  }
+  if (currentTime >= timeStamp5 && currentTime < timeStamp6) {
+    chapter = 5;
+  }
+  if (currentTime >= timeStamp6 && currentTime < timeStamp7) {
+    chapter = 6;
+  }
+  if (currentTime >= timeStamp7 && currentTime < timeStamp8) {
+    chapter = 7;
+  }
+  if (currentTime >= timeStamp8 && currentTime < timeStamp9) {
+    chapter = 8;
+  }
+  if (currentTime >= timeStamp9 && currentTime < timeStamp10) {
+    chapter = 9;
+  }
+  if (currentTime >= timeStamp10 && currentTime < timeStamp11) {
+    chapter = 10;
+  }
+  if (currentTime >= timeStamp11 && currentTime < timeStamp12) {
+    chapter = 11;
+  }
+  if (currentTime >= timeStamp12 && currentTime < timeStamp13) {
+    chapter = 12;
+  }
+  if (currentTime >= timeStamp13 && currentTime < timeStamp14) {
+    chapter = 13;
   }
   switch (chapter) {
     case 0:
@@ -351,50 +564,40 @@ function keyPressed() {
       chapName = "B";
       break;
     case 2:
+      chapName = "A";
+      break;
+    case 3:
+      chapName = "B";
+      break;
+    case 4:
       chapName = "C";
       break;
-    case 3:
+    case 5:
       chapName = "D";
       break;
-  }
-
-}
-
-function fadeInOut() {
-  switch (chapter) {
-    case 0:
-      synthVol = synthVol + .01;
-      waveVol = waveVol - .01;
-      if (synthVol > 1) {
-        synthVol = 1;
-      }
-      if (waveVol < 0) {
-        waveVol = 0;
-      }
+    case 6:
+      chapName = "C";
       break;
-    case 1:
-      synthVol = synthVol - .01;
-      waveVol = waveVol + .01;
-      if (synthVol < 0) {
-        synthVol = 0;
-      }
-      if (waveVol > 1) {
-        waveVol = 1;
-      }
+    case 7:
+      chapName = "D";
       break;
-    case 2:
-      synthVol = synthVol - .01;
-      waveVol = waveVol + .01;
-      if (synthVol < 0) {
-        synthVol = 0;
-      }
-      if (waveVol > 1) {
-        waveVol = 1;
-      }
-
+    case 8:
+      chapName = "C";
       break;
-    case 3:
-
+    case 9:
+      chapName = "D";
+      break;
+    case 10:
+      chapName = "A";
+      break;
+    case 11:
+      chapName = "B";
+      break;
+    case 12:
+      chapName = "A";
+      break;
+    case 13:
+      chapName = "B";
       break;
   }
 }
