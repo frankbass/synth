@@ -10,7 +10,7 @@ let minPitch = 100;
 let interval = 2;
 let targetTime = currentTime + interval;
 let tuning = false;
-let running = true;
+let running = false;
 
 let targetPitch = currentPitch;
 let tuneInc = 0;
@@ -24,6 +24,10 @@ let delay;
 let controlSignal;
 let controlSignalMax = .7;
 
+let amFMsynth;
+let amFMharm;
+let amFMfund = 200;
+
 let video;
 let prevFrame;
 let threshold = 50;
@@ -34,21 +38,41 @@ let prevChanges = new Array(arrayLength);
 let pinkNoise, filtering;
 
 let chapter = 0;
-// let maxChapter = 3;
-
-let chapName = "A";
+let lastChap = chapter;
+let chapName;
+let maxChapter = 32;
+let timeStamps = new Array(maxChapter);
 
 let tempFrCo;
 
 let synthVol = 0;
 let waveVol = 0;
-let waveCounter = 0;
+// let waveCounter = 0;
+let amFMsynthVol = 0;
+
+let twitch;
+let twitchVol = 0;
+
+let sectionLength = 225;
+
+
+function preload() {
+  soundFormats('wav');
+  twitch = loadSound('twitch.wav');
+}
 
 function setup() {
   let cnv = createCanvas(640, 360);
   tempFrCo = frameCount;
+
+  for (let i = 0; i < maxChapter; i++) {
+    timeStamps[i] = sectionLength * i;
+  }
+
+  chapters();
   synthSetup();
-  noiseSetup()
+  noiseSetup();
+  loopSetup();
   revDelay();
   videoSetup();
   textSize(32);
@@ -76,6 +100,24 @@ function synthSetup() {
   fundSynth.freq(minPitch);
   fundSynth.amp(.1);
   fundSynth.start();
+
+  amFMsynth = new p5.Oscillator();
+  amFMsynth.setType("sine");
+  amFMsynth.freq(amFMfund);
+  amFMsynth.start();
+  amFMsynth.pan(-1);
+
+  amFMharm = new p5.Oscillator();
+  amFMharm.setType("sine");
+  amFMharm.freq(amFMfund);
+  amFMharm.start();
+  amFMharm.pan(1);
+}
+
+function loopSetup() {
+  twitch.play();
+  twitch.setVolume(twitchVol);
+  twitch.loop();
 }
 
 function revDelay() {
@@ -83,6 +125,7 @@ function revDelay() {
   // reverb.process(fundSynth, 3, 1);
   reverb.process(melodySynth, 3, 1);
   reverb.process(filtering, 3, 2);
+  reverb.process(twitch, 5, 1);
 
   delay = new p5.Delay();
   // source, delayTime, feedback, filter frequency
@@ -104,7 +147,7 @@ function videoSetup() {
 function draw() {
   background(0);
 
-  let vol = getMasterVolume();
+  // let vol = getMasterVolume();
   let level = amplitude.getLevel();
   let size = map(level, 0, 1, 0, 500);
 
@@ -113,12 +156,30 @@ function draw() {
   averageChanges()
   composer();
   timer();
+  chapters();
   tuner();
   synths();
+  amFMmodulation();
   waves();
+  twitchLoop();
+  voiceSelecter();
   if ((tempFrCo == frameCount) || (tempFrCo + 120) > (frameCount)) {
     fadeInOut();
   }
+}
+
+function voiceSelecter() {
+  if (chapName === "A") {
+    tuner();
+    synths();
+  }
+  if (chapName === "B") {
+    amFMmodulation();
+  }
+  if (chapName === "C") {
+    waves();
+  }
+
 }
 
 function screenText() {
@@ -191,6 +252,8 @@ function tuner() {
 function synths() {
 
   let melSynthVol = controlSignal;
+
+  // let melSynthVol = 1;
   melSynthVol = melSynthVol * synthVol;
   melodySynth.freq(currentPitch);
   melodySynth.amp(melSynthVol);
@@ -211,15 +274,83 @@ function synths() {
 
   let x = map(currentPitch, minPitch, maxPitch, 0, width);
   let y = map(fundPitch, minPitch - 20, minPitch + 20, 0, height);
-  // let ySize = map(fundVolume, -.001, .001, 2, 30);
   let ySize = map(fundVolume, -.1, .1, 2, 30);
-
-  // let xSize = map(melSynthVol, 0, .007, 2, 30);
-  // console.log('mel ' + melSynthVol);
-  // console.log("x " + xSize + ", y " + ySize);
 
   fill(255, 0, 0);
   ellipse(x, y, ySize, ySize);
+}
+
+function amFMmodulation() {
+
+  let fm = sin(frameCount / (200 * PI)); // ~ 0.1 Hz
+  fm = (fm * 2) + amFMfund; // fund ± 2
+  amFMsynth.freq(fm);
+
+  let fastAm = sin(frameCount / (20 * PI)); // ~ 1 Hz
+  fastAm = (fastAm * 2) + 3; // ~ 1 => 5
+  fastAm = sin((frameCount * fastAm) / (2 * PI));
+  let slowAM = sin(frameCount / (200 * PI));
+  slowAm = slowAM / 2;
+  slowAM = slowAM + 1; // ~ .5 => 1.5
+  let product = amFMsynthVol * fastAm * slowAM;
+  amFMsynth.amp(product, .1);
+  amFMharm.amp(product, .1);
+
+}
+
+function waves() {
+  let x = (sin(frameCount / 100) + 1) / 2;
+  // let x = (sin(waveCounter / 1000000) + 1) / 2;
+  x = x * width;
+  let freq = map(x, 0, width, 100, 500);
+  filtering.freq(freq);
+
+  let y = (cos(frameCount / 300) + 1) / 2;
+  // let y = (cos(waveCounter / 3000000) + 1) / 2;
+  y = y * height;
+  let resonance = map(y, 0, height, 0.1, 5);
+  filtering.res(resonance);
+
+  let z = controlSignal;
+  // let z = 1;
+  let dia = (z + .1) * 30;
+  let squareAmp = squareWave2();
+  z = z * waveVol * squareAmp;
+
+  pinkNoise.amp(z + 0, 0);
+
+  let panning;
+  if (chapter == 2) {
+    panning = squareWave();
+  } else {
+    panning = 0;
+  }
+  pinkNoise.pan(panning)
+  fill(0, 255, 255);
+  ellipse(x, y, dia, dia);
+}
+
+function twitchLoop() {
+  let onOff;
+  let tempLoopVol;
+  let leftRight;
+  if (frameCount % 15 == 0) {
+    onOff = random();
+    if (onOff > .5) {
+      onOff = 1;
+    } else {
+      onOff = 0;
+    }
+    leftRight = random();
+    if (leftRight > .5) {
+      leftRight = 1;
+    } else {
+      leftRight = -1;
+    }
+    tempLoopVol = twitchVol * onOff;
+    twitch.pan(leftRight);
+  }
+  twitch.setVolume(tempLoopVol);
 }
 
 function distSq(x1, y1, z1, x2, y2, z2) {
@@ -247,7 +378,7 @@ function videoProcessing() {
       var diff = distSq(r1, g1, b1, r2, g2, b2);
       if (diff > threshold * threshold) {
         changeCoefficient++;
-        waveCounter++;
+        // waveCounter++;
       }
     }
   }
@@ -292,37 +423,6 @@ function noiseSetup() {
   pinkNoise.amp(waveVol, 0.2);
 }
 
-function waves() {
-  let x = (sin(frameCount / 100) + 1) / 2;
-  // let x = (sin(waveCounter / 1000000) + 1) / 2;
-  x = x * width;
-  let freq = map(x, 0, width, 100, 500);
-  filtering.freq(freq);
-
-  let y = (cos(frameCount / 300) + 1) / 2;
-  // let y = (cos(waveCounter / 3000000) + 1) / 2;
-  y = y * height;
-  let resonance = map(y, 0, height, 0.1, 5);
-  filtering.res(resonance);
-
-  let z = controlSignal;
-  let dia = (z + .1) * 30;
-  let squareAmp = squareWave2();
-  z = z * waveVol * squareAmp;
-
-  pinkNoise.amp(z + 0, 0);
-
-  let panning;
-  if (chapter == 2) {
-    panning = squareWave();
-  } else {
-    panning = 0;
-  }
-  pinkNoise.pan(panning)
-  fill(0, 255, 255);
-  ellipse(x, y, dia, dia);
-}
-
 function squareWave() {
   let slope = 0;
   // let speed = sin(currentTime) + 1;
@@ -337,7 +437,7 @@ function squareWave() {
 
   }
   return zeroOne;
-}
+} // output -1 1
 
 function squareWave2() {
   let slope = 0;
@@ -354,75 +454,142 @@ function squareWave2() {
 
   }
   return zeroOne;
-}
+} // output 0 1
 
 function fadeInOut() {
   if (!running) {
     synthVol = synthVol - .01;
-    waveVol = waveVol - .01;
     if (synthVol < 0) {
       synthVol = 0;
     }
+    waveVol = waveVol - .01;
     if (waveVol < 0) {
       waveVol = 0;
     }
-  } else {
-    switch (chapter) {
-      case 0:
-        synthVol = synthVol + .01;
-        waveVol = waveVol - .01;
-        if (synthVol > 1) {
-          synthVol = 1;
-        }
-        if (waveVol < 0) {
-          waveVol = 0;
-        }
-        break;
-      case 1:
-        synthVol = synthVol - .01;
-        waveVol = waveVol + .01;
-        if (synthVol < 0) {
-          synthVol = 0;
-        }
-        if (waveVol > 1) {
-          waveVol = 1;
-        }
-        break;
-      case 2:
-        synthVol = synthVol - .01;
-        waveVol = waveVol + .01;
-        if (synthVol < 0) {
-          synthVol = 0;
-        }
-        if (waveVol > 1) {
-          waveVol = 1;
-        }
-
-        break;
-      case 3:
-
-        break;
+    amFMsynthVol = amFMsynthVol - .01;
+    if (amFMsynthVol < 0) {
+      amFMsynthVol = 0;
     }
+    twitchVol = twitchVol - .01;
+    if (twitchVol < 0) {
+      twitchVol = 0;
+    }
+  } else {
+    if (chapName === "A") {
+      synthVol = synthVol + .01;
+      waveVol = waveVol - .01;
+      if (synthVol > 1) {
+        synthVol = 1;
+      }
+      if (waveVol < 0) {
+        waveVol = 0;
+      }
+      amFMsynthVol = amFMsynthVol - .01;
+      if (amFMsynthVol < 0) {
+        amFMsynthVol = 0;
+      }
+      twitchVol = twitchVol - .01;
+      if (twitchVol < 0) {
+        twitchVol = 0;
+      }
+    }
+    if (chapName === "B") {
+      amFMsynthVol = amFMsynthVol + .01;
+      if (amFMsynthVol > 1) {
+        amFMsynthVol = 1;
+      }
+      synthVol = synthVol - .01;
+
+      if (synthVol < 0) {
+        synthVol = 0;
+      }
+      waveVol = waveVol - .01;
+      if (waveVol < 0) {
+        waveVol = 0;
+      }
+      twitchVol = twitchVol - .01;
+      if (twitchVol < 0) {
+        twitchVol = 0;
+      }
+    }
+    if (chapName === "C") {
+      synthVol = synthVol - .01;
+      if (synthVol < 0) {
+        synthVol = 0;
+      }
+      waveVol = waveVol + .01;
+      if (waveVol > 1) {
+        waveVol = 1;
+      }
+      amFMsynthVol = amFMsynthVol - .01;
+      if (amFMsynthVol < 0) {
+        amFMsynthVol = 0;
+      }
+      twitchVol = twitchVol - .01;
+      if (twitchVol < 0) {
+        twitchVol = 0;
+      }
+    }
+    if (chapName === "D") {
+      synthVol = synthVol - .01;
+      if (synthVol < 0) {
+        synthVol = 0;
+      }
+      waveVol = waveVol - .01;
+      if (waveVol < 0) {
+        waveVol = 0;
+      }
+      amFMsynthVol = amFMsynthVol - .01;
+      if (amFMsynthVol < 0) {
+        amFMsynthVol = 0;
+      }
+      twitchVol = twitchVol + .01;
+      if (twitchVol > 1) {
+        twitchVol = 1;
+      }
+    }
+    if (chapName === "E") {
+      synthVol = synthVol - .01;
+      if (synthVol < 0) {
+        synthVol = 0;
+      }
+      waveVol = waveVol - .01;
+      if (waveVol < 0) {
+        waveVol = 0;
+      }
+      amFMsynthVol = amFMsynthVol - .01;
+      if (amFMsynthVol < 0) {
+        amFMsynthVol = 0;
+      }
+      twitchVol = twitchVol - .01;
+      if (twitchVol < 0) {
+        twitchVol = 0;
+      }
+    }
+
   }
 }
 
-let timeStamp0 = 0;
-let timeStamp1 = 225;
-let timeStamp2 = 450;
-let timeStamp3 = 675;
-let timeStamp4 = 900;
-let timeStamp5 = 1200;
-let timeStamp6 = 1500;
-let timeStamp7 = 1800;
-let timeStamp8 = 2100;
-let timeStamp9 = 2400;
-let timeStamp10 = 2700;
-let timeStamp11 = 2925;
-let timeStamp12 = 3150;
-let timeStamp13 = 3375;
-let timeStamp14 = 3600;
+// let timeStamp0 = 0;
+// let timeStamp1 = 2;
+// let timeStamp2 = 4;
+// let timeStamp3 = 6;
+// let timeStamp4 = 8;
+// let timeStamp5 = 10;
+// let timeStamp6 = 1000;
+// let timeStamp7 = 2000;
+// let timeStamp8 = 2100;
+// let timeStamp9 = 2400;
+// let timeStamp10 = 2700;
+// let timeStamp11 = 2925;
+// let timeStamp12 = 3150;
+// let timeStamp13 = 3375;
+// let timeStamp14 = 3600;
+
+
 
 function keyPressed() {
+  let placeholder;
   if (keyCode == 32) { //32 == space
     if (!running) {
       running = true;
@@ -431,131 +598,135 @@ function keyPressed() {
     }
   }
   tempFrCo = frameCount;
-  // if (keyCode == UP_ARROW) {
-  //   chapter--;
-  //   if (chapter < 0) {
-  //     chapter = 0;
-  //   }
-  //   tempFrCo = frameCount;
+
+  // if (keyCode >= 49 && keyCode <= 57) {
   //
   // }
-  // if (keyCode == DOWN_ARROW) {
-  //   chapter++;
-  //   if (chapter > maxChapter) {
-  //     chapter = maxChapter;
-  //   }
-  //   tempFrCo = frameCount;
-  // }
-  // switch (chapter) {
-  //   case 0:
-  //     chapName = "A";
-  //     break;
-  //   case 1:
-  //     chapName = "B";
-  //     break;
-  //   case 2:
-  //     chapName = "C";
-  //     break;
-  //   case 3:
-  //     chapName = "D";
-  //     break;
-  // }
-
 
 
   if (keyIsDown(16)) { //shift
+    // keyCode 49 = 1, 50 = 2...
+    if (keyCode >= 49 && keyCode <= 57) {
+      placeholder = keyCode - 49;
+      placeholder = (placeholder * 2) + 1;
+      currentTime = timeStamps[placeholder];
 
-    if (keyCode == 49) { //1
-      currentTime = timeStamp1;
-    }
-    if (keyCode == 50) { //2
-      currentTime = timeStamp3;
-    }
-    if (keyCode == 51) {
-      currentTime = timeStamp5;
-    }
-    if (keyCode == 52) {
-      currentTime = timeStamp7;
-    }
-    if (keyCode == 53) {
-      currentTime = timeStamp9;
-    }
-    if (keyCode == 54) {
-      currentTime = timeStamp11;
-    }
-    if (keyCode == 55) {
-      currentTime = timeStamp13;
     }
   } else {
-    if (keyCode == 49) { //1
-      currentTime = timeStamp0;
-    }
-    if (keyCode == 50) { //2
-      currentTime = timeStamp2;
-    }
-    if (keyCode == 51) {
-      currentTime = timeStamp4;
-    }
-    if (keyCode == 52) {
-      currentTime = timeStamp6;
-    }
-    if (keyCode == 53) {
-      currentTime = timeStamp8;
-    }
-    if (keyCode == 54) {
-      currentTime = timeStamp10;
-    }
-    if (keyCode == 55) {
-      currentTime = timeStamp12;
-    }
-  }
+    if (keyCode >= 49 && keyCode <= 57) {
+      placeholder = keyCode - 49;
+      placeholder = placeholder * 2;
+      currentTime = timeStamps[placeholder];
 
-  chapters();
+    }
+
+    // if (keyIsDown(16)) {
+    // if (keyCode == 49) { //1
+    //   currentTime = timeStamp0;
+    // }
+    // if (keyCode == 50) { //2
+    //   currentTime = timeStamp2;
+    // }
+    // if (keyCode == 51) {
+    //   currentTime = timeStamp4;
+    // }
+    // if (keyCode == 52) {
+    //   currentTime = timeStamp6;
+    // }
+    // if (keyCode == 53) {
+    //   currentTime = timeStamp8;
+    // }
+    // if (keyCode == 54) {
+    //   currentTime = timeStamp10;
+    // }
+    // if (keyCode == 55) {
+    //   currentTime = timeStamp12;
+    // }
+
+    // } else {
+
+    // if (keyCode == 49) { //1
+    //   currentTime = timeStamp0;
+    // }
+    // if (keyCode == 50) { //2
+    //   currentTime = timeStamp2;
+    // }
+    // if (keyCode == 51) {
+    //   currentTime = timeStamp4;
+    // }
+    // if (keyCode == 52) {
+    //   currentTime = timeStamp6;
+    // }
+    // if (keyCode == 53) {
+    //   currentTime = timeStamp8;
+    // }
+    // if (keyCode == 54) {
+    //   currentTime = timeStamp10;
+    // }
+    // if (keyCode == 55) {
+    //   currentTime = timeStamp12;
+    // }
+    // }
+
+
+
+  }
 }
 
 function chapters() {
-  if (currentTime >= timeStamp0 && currentTime < timeStamp1) {
-    chapter = 0;
+
+  if (currentTime % sectionLength == 0) {
+    chapter = floor(currentTime / sectionLength);
+
+
   }
-  if (currentTime >= timeStamp1 && currentTime < timeStamp2) {
-    chapter = 1;
+  // if (currentTime >= timeStamps[0] && currentTime < timeStamps[1]) {
+  //   chapter = 0;
+  // }
+  // if (currentTime >= timeStamps[1] && currentTime < timeStamps[2]) {
+  //   chapter = 1;
+  // }
+  // if (currentTime >= timeStamps[2] && currentTime < timeStamps[3]) {
+  //   chapter = 2;
+  // }
+  // if (currentTime >= timeStamps[3] && currentTime < timeStamps[4]) {
+  //   chapter = 3;
+  // }
+  // if (currentTime >= timeStamps[4] && currentTime < timeStamps[5]) {
+  //   chapter = 4;
+  // }
+  // if (currentTime >= timeStamps[1] && currentTime < timeStamps[2]) {
+  //   chapter = 5;
+  // }
+  // if (currentTime >= timeStamps[1] && currentTime < timeStamps[2]) {
+  //   chapter = 6;
+  // }
+  // if (currentTime >= timeStamps[1] && currentTime < timeStamps[2]) {
+  //   chapter = 7;
+  // }
+  // if (currentTime >= timeStamps[1] && currentTime < timeStamps[2]) {
+  //   chapter = 8;
+  // }
+  // if (currentTime >= timeStamps[1] && currentTime < timeStamps[2]) {
+  //   chapter = 9;
+  // }
+  // if (currentTime >= timeStamps[1] && currentTime < timeStamps[2]) {
+  //   chapter = 10;
+  // }
+  // if (currentTime >= timeStamps[1] && currentTime < timeStamps[2]) {
+  //   chapter = 11;
+  // }
+  // if (currentTime >= timeStamps[1] && currentTime < timeStamps[2]) {
+  //   chapter = 12;
+  // }
+  // if (currentTime >= timeStamps[1] && currentTime < timeStamps[2]) {
+  //   chapter = 13;
+  // }
+  if (lastChap != chapter) {
+    tempFrCo = frameCount;
   }
-  if (currentTime >= timeStamp2 && currentTime < timeStamp3) {
-    chapter = 2;
-  }
-  if (currentTime >= timeStamp3 && currentTime < timeStamp4) {
-    chapter = 3;
-  }
-  if (currentTime >= timeStamp4 && currentTime < timeStamp5) {
-    chapter = 4;
-  }
-  if (currentTime >= timeStamp5 && currentTime < timeStamp6) {
-    chapter = 5;
-  }
-  if (currentTime >= timeStamp6 && currentTime < timeStamp7) {
-    chapter = 6;
-  }
-  if (currentTime >= timeStamp7 && currentTime < timeStamp8) {
-    chapter = 7;
-  }
-  if (currentTime >= timeStamp8 && currentTime < timeStamp9) {
-    chapter = 8;
-  }
-  if (currentTime >= timeStamp9 && currentTime < timeStamp10) {
-    chapter = 9;
-  }
-  if (currentTime >= timeStamp10 && currentTime < timeStamp11) {
-    chapter = 10;
-  }
-  if (currentTime >= timeStamp11 && currentTime < timeStamp12) {
-    chapter = 11;
-  }
-  if (currentTime >= timeStamp12 && currentTime < timeStamp13) {
-    chapter = 12;
-  }
-  if (currentTime >= timeStamp13 && currentTime < timeStamp14) {
-    chapter = 13;
-  }
+  lastChap = chapter;
+
   switch (chapter) {
     case 0:
       chapName = "A";
@@ -582,21 +753,27 @@ function chapters() {
       chapName = "D";
       break;
     case 8:
-      chapName = "C";
+      chapName = "E";
       break;
     case 9:
-      chapName = "D";
+      chapName = "C";
       break;
     case 10:
-      chapName = "A";
+      chapName = "D";
       break;
     case 11:
-      chapName = "B";
-      break;
-    case 12:
       chapName = "A";
       break;
+    case 12:
+      chapName = "B";
+      break;
     case 13:
+      chapName = "A";
+      break;
+    case 14:
+      chapName = "B";
+      break;
+    case 15:
       chapName = "B";
       break;
   }
