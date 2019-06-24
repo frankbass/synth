@@ -162,25 +162,25 @@ function draw() {
   amFMmodulation();
   waves();
   twitchLoop();
-  voiceSelecter();
+  // voiceSelecter();
   if ((tempFrCo == frameCount) || (tempFrCo + 120) > (frameCount)) {
     fadeInOut();
   }
 }
 
-function voiceSelecter() {
-  if (chapName === "A") {
-    tuner();
-    synths();
-  }
-  if (chapName === "B") {
-    amFMmodulation();
-  }
-  if (chapName === "C") {
-    waves();
-  }
-
-}
+// function voiceSelecter() {
+//   if (chapName === "A") {
+//     tuner();
+//     synths();
+//   }
+//   if (chapName === "B") {
+//     amFMmodulation();
+//   }
+//   if (chapName === "C") {
+//     waves();
+//   }
+//
+// }
 
 function screenText() {
   let secs = currentTime % 60;
